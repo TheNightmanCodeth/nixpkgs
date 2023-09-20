@@ -100,6 +100,7 @@ let
     "autolink-driver"
     "compiler"
     # "clang-builtin-headers"
+    "libexec"
     "stdlib"
     "sdk-overlay"
     "static-mirror-lib"
@@ -256,7 +257,7 @@ in stdenv.mkDerivation {
     mkdir src
     cd src
 
-    ${copySource "swift-cmark"}
+    ${copySource "cmark"}
     ${copySource "llvm-project"}
     ${copySource "swift"}
     ${copySource "swift-experimental-string-processing"}
@@ -280,7 +281,6 @@ in stdenv.mkDerivation {
       -e 's|/bin/cp|${coreutils}/bin/cp|g' \
       -e 's|/usr/bin/file|${file}/bin/file|g'
 
-    patch -p1 -d swift -i ${./patches/swift-cmake-3.25-compat.patch}
     patch -p1 -d swift -i ${./patches/swift-wrap.patch}
     patch -p1 -d swift -i ${./patches/swift-nix-resource-root.patch}
     patch -p1 -d swift -i ${./patches/swift-linux-fix-libc-paths.patch}
@@ -300,6 +300,8 @@ in stdenv.mkDerivation {
     storeDir="${builtins.storeDir}" \
       substituteAll ${./patches/swift-separate-lib.patch} $TMPDIR/swift-separate-lib.patch
     patch -p1 -d swift -i $TMPDIR/swift-separate-lib.patch
+
+    patch -p1 -d llvm-project -i ${./patches/lldb-build-fix.patch}
 
     patch -p1 -d llvm-project/llvm -i ${./patches/llvm-module-cache.patch}
 
@@ -338,7 +340,7 @@ in stdenv.mkDerivation {
       sha256 = "1rma1al0rbm3s3ql6bnvbcighp74lri1lcrwbyacgdqp80fgw1b6";
     }}
 
-   # gcc-13 build fixes
+    # gcc-13 build fixes
     patch -p2 -d llvm-project/llvm -i ${fetchpatch {
       name = "gcc-13.patch";
       url = "https://github.com/llvm/llvm-project/commit/ff1681ddb303223973653f7f5f3f3435b48a1983.patch";
@@ -436,7 +438,7 @@ in stdenv.mkDerivation {
     }
 
     cmakeFlags="-GNinja"
-    buildProject swift-cmark
+    buildProject cmark
 
     # Some notes:
     # - The Swift build just needs Clang.
@@ -479,12 +481,16 @@ in stdenv.mkDerivation {
       -DBOOTSTRAPPING_MODE=BOOTSTRAPPING${lib.optionalString stdenv.hostPlatform.isDarwin "-WITH-HOSTLIBS"}
       -DSWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=ON
       -DSWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY=ON
+      -DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP=ON
       -DSWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED=ON
       -DSWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING=ON
+      -DSWIFT_ENABLE_EXPERIMENTAL_OBSERVATION=ON
+      -DSWIFT_ENABLE_BACKTRACING=ON
+      -DSWIFT_BUILD_LIBEXEC=${if stdenv.isDarwin then "ON" else "OFF"}
       -DLLVM_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/llvm
       -DClang_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/clang
-      -DSWIFT_PATH_TO_CMARK_SOURCE=$SWIFT_SOURCE_ROOT/swift-cmark
-      -DSWIFT_PATH_TO_CMARK_BUILD=$SWIFT_BUILD_ROOT/swift-cmark
+      -DSWIFT_PATH_TO_CMARK_SOURCE=$SWIFT_SOURCE_ROOT/cmark
+      -DSWIFT_PATH_TO_CMARK_BUILD=$SWIFT_BUILD_ROOT/cmark
       -DSWIFT_PATH_TO_LIBDISPATCH_SOURCE=$SWIFT_SOURCE_ROOT/swift-corelibs-libdispatch
       -DSWIFT_PATH_TO_SWIFT_SYNTAX_SOURCE=$SWIFT_SOURCE_ROOT/swift-syntax
       -DSWIFT_PATH_TO_STRING_PROCESSING_SOURCE=$SWIFT_SOURCE_ROOT/swift-experimental-string-processing
@@ -552,7 +558,7 @@ in stdenv.mkDerivation {
     # Undo the clang and swift wrapping we did for the build.
     # (This happened via patches to cmake files.)
     cd $SWIFT_BUILD_ROOT
-    mv llvm/bin/clang-15{-unwrapped,}
+    mv llvm/bin/clang-16{-unwrapped,}
     mv swift/bin/swift-frontend{-unwrapped,}
 
     mkdir $out $lib
