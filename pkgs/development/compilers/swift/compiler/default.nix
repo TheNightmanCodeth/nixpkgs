@@ -305,47 +305,8 @@ in stdenv.mkDerivation {
 
     patch -p1 -d llvm-project/llvm -i ${./patches/llvm-module-cache.patch}
 
-    for lldbPatch in ${lib.escapeShellArgs [
-      # Fixes for SWIG 4
-      (fetchpatch2 {
-        url = "https://github.com/llvm/llvm-project/commit/81fc5f7909a4ef5a8d4b5da2a10f77f7cb01ba63.patch?full_index=1";
-        stripLen = 1;
-        hash = "sha256-Znw+C0uEw7lGETQLKPBZV/Ymo2UigZS+Hv/j1mUo7p0=";
-      })
-      (fetchpatch2 {
-        url = "https://github.com/llvm/llvm-project/commit/f0a25fe0b746f56295d5c02116ba28d2f965c175.patch?full_index=1";
-        stripLen = 1;
-        hash = "sha256-QzVeZzmc99xIMiO7n//b+RNAvmxghISKQD93U2zOgFI=";
-      })
-      (fetchpatch2 {
-        url = "https://github.com/llvm/llvm-project/commit/ba35c27ec9aa9807f5b4be2a0c33ca9b045accc7.patch?full_index=1";
-        stripLen = 1;
-        hash = "sha256-LXl+WbpmWZww5xMDrle3BM2Tw56v8k9LO1f1Z1/wDTs=";
-      })
-      (fetchpatch2 {
-        url = "https://github.com/llvm/llvm-project/commit/9ec115978ea2bdfc60800cd3c21264341cdc8b0a.patch?full_index=1";
-        stripLen = 1;
-        hash = "sha256-u0zSejEjfrH3ZoMFm1j+NVv2t5AP9cE5yhsrdTS1dG4=";
-      })
-    ]}; do
-      patch -p1 -d llvm-project/lldb -i $lldbPatch
-    done
-
     patch -p1 -d llvm-project/clang -i ${./patches/clang-toolchain-dir.patch}
     patch -p1 -d llvm-project/clang -i ${./patches/clang-wrap.patch}
-    patch -p1 -d llvm-project/clang -i ${../../llvm/12/clang/purity.patch}
-    patch -p2 -d llvm-project/clang -i ${fetchpatch {
-      name = "clang-cmake-fix-interpreter.patch";
-      url = "https://github.com/llvm/llvm-project/commit/b5eaf500f2441eff2277ea2973878fb1f171fd0a.patch";
-      sha256 = "1rma1al0rbm3s3ql6bnvbcighp74lri1lcrwbyacgdqp80fgw1b6";
-    }}
-
-    # gcc-13 build fixes
-    patch -p2 -d llvm-project/llvm -i ${fetchpatch {
-      name = "gcc-13.patch";
-      url = "https://github.com/llvm/llvm-project/commit/ff1681ddb303223973653f7f5f3f3435b48a1983.patch";
-      hash = "sha256-nkRPWx8gNvYr7mlvEUiOAb1rTrf+skCZjAydJVUHrcI=";
-    }}
 
     ${lib.optionalString stdenv.hostPlatform.isLinux ''
     substituteInPlace llvm-project/clang/lib/Driver/ToolChains/Linux.cpp \
