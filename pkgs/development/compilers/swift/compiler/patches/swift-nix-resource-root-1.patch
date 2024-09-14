@@ -1,0 +1,38 @@
+diff --git a/lib/ClangImporter/ClangImporter.cpp b/lib/ClangImporter/ClangImporter.cpp
+index e8ef04e2ad0..98d69f49fd7 100644
+--- a/lib/ClangImporter/ClangImporter.cpp
++++ b/lib/ClangImporter/ClangImporter.cpp
+@@ -92,6 +92,7 @@
+ #include "llvm/Support/FileSystem.h"
+ #include "llvm/Support/Memory.h"
+ #include "llvm/Support/Path.h"
++#include "llvm/Support/Process.h"
+ #include "llvm/Support/VirtualFileSystem.h"
+ #include "llvm/Support/VirtualOutputBackend.h"
+ #include "llvm/TextAPI/InterfaceFile.h"
+@@ -868,6 +869,17 @@ importer::addCommonInvocationArguments(
+ 
+   const std::string &overrideResourceDir = importerOpts.OverrideResourceDir;
+   if (overrideResourceDir.empty()) {
++	// Prefer the Clang resource directory from NIX_CC, to allow swapping in a
++	// different stdenv
++	// TODO: Figure out how to provide a user override for this. Probably a
++	// niche use case, though, and for now a user can unset NIX_CC to work
++	// around it if necessary.
++	if (auto nixCC = llvm::sys::Process::GetEnv("NIX_CC")) {
++	  llvm::SmallString<128> resourceDir(nixCC.getValue());
++	  llvm::sys::path::append(resourceDir, "resource-root");
++	  invocationArgStrs.push_back("-resource-dir");
++	  invocationArgStrs.push_back(std::string(resourceDir.str()));
++	} else {
+     llvm::SmallString<128> resourceDir(searchPathOpts.RuntimeResourcePath);
+ 
+     // Adjust the path to refer to our copy of the Clang resource directory
+@@ -883,6 +895,7 @@ importer::addCommonInvocationArguments(
+     // Set the Clang resource directory to the path we computed.
+     invocationArgStrs.push_back("-resource-dir");
+     invocationArgStrs.push_back(std::string(resourceDir.str()));
++	} // nixCC
+   } else {
+     invocationArgStrs.push_back("-resource-dir");
+     invocationArgStrs.push_back(overrideResourceDir);

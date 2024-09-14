@@ -1,19 +1,14 @@
-Patch paths to use the separate 'lib' output. One of the things this patch
-fixes is the output of `swift -frontend -print-target-info`, which swiftpm uses
-to set rpath on Linux.
-
-The check if the executable path starts with 'out' is necessary for
-bootstrapping, or the compiler will fail when run from the build directory.
-
+diff --git a/lib/Frontend/CompilerInvocation.cpp b/lib/Frontend/CompilerInvocation.cpp
+index 7924dbbc83b..6497c8be2f7 100644
 --- a/lib/Frontend/CompilerInvocation.cpp
 +++ b/lib/Frontend/CompilerInvocation.cpp
-@@ -49,11 +49,16 @@ swift::CompilerInvocation::CompilerInvocation() {
+@@ -64,11 +64,16 @@ getVersionTuple(const llvm::Triple &triple) {
  void CompilerInvocation::computeRuntimeResourcePathFromExecutablePath(
      StringRef mainExecutablePath, bool shared,
      llvm::SmallVectorImpl<char> &runtimeResourcePath) {
-+  if (mainExecutablePath.startswith("@storeDir@")) {
-+    auto libPath = StringRef("@lib@");
-+    runtimeResourcePath.append(libPath.begin(), libPath.end());
++  if (mainExecutablePath.startsWith("@storeDir@")) {
++	auto libPath = StringRef("@lib@");
++	runtimeResourcePath.append(libPath.begin(), libPath.end());
 +  } else {
    runtimeResourcePath.append(mainExecutablePath.begin(),
                               mainExecutablePath.end());

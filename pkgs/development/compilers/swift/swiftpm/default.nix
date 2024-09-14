@@ -102,6 +102,7 @@ let
         # Builds often don't set a target, and our default minimum macOS deployment
         # target on x86_64-darwin is too low. Harmless on non-Darwin.
         export MACOSX_DEPLOYMENT_TARGET=10.15.4
+        export HOME="$TMP"
       '';
 
     postInstall = (attrs.postInstall or "")
@@ -274,6 +275,7 @@ let
 
     patches = [
       ./patches/llbuild-cmake-disable-rpath.patch
+      ./patches/llbuild-guard-posix-spawn.patch
     ];
 
     postPatch = ''
@@ -404,6 +406,8 @@ in stdenv.mkDerivation (commonAttrs // {
     ];
 
   configurePhase = generated.configure + ''
+    export HOME="$TMP"
+
     # Functionality provided by Xcode XCTest, but not available in
     # swift-corelibs-xctest.
     swiftpmMakeMutable swift-tools-support-core
@@ -423,7 +427,10 @@ in stdenv.mkDerivation (commonAttrs // {
     # Required to link with swift-corelibs-xctest on Darwin.
     export SWIFTTSC_MACOS_DEPLOYMENT_TARGET=10.12
 
-    TERM=dumb swift-build -c release
+    # There appears to be a possible fd race (?) here. It's sporadic on my machine.
+    # swift-certificates and swift-collections sometimes both fail to close _something_
+    # Adding `--verbose` here clears that up ... I think?
+    TERM=dumb swift-build -c release --verbose
   '';
 
   # TODO: Tests depend on indexstore-db being provided by an existing Swift

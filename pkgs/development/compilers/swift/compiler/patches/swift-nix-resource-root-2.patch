@@ -1,0 +1,48 @@
+diff --git a/lib/Driver/ToolChains.cpp b/lib/Driver/ToolChains.cpp
+index a945f376fa3..8a89331ed6a 100644
+--- a/lib/Driver/ToolChains.cpp
++++ b/lib/Driver/ToolChains.cpp
+@@ -1470,13 +1470,23 @@ void ToolChain::getClangLibraryPath(const ArgList &Args,
+                                     SmallString<128> &LibPath) const {
+   const llvm::Triple &T = getTriple();
+ 
++  // Nix: We provide a `clang` symlink in the default Swift resource root, but
++  // prefer detecting the Clang resource root via NIX_CC, to alow swapping in
++  // a different stdenv. However, always honor a user-provided `-resource-dir`.
++  auto nixCC = llvm::sys::Process::GetEnv("NIX_CC");
++  if (nixCC && !Args.hasArgNoClaim(options::OPT_resource_dir)) {
++	  LibPath.assign(nixCC.getValue());
++	  llvm::sys::path::append(LibPath, "resource-root");
++  } else {
+   getResourceDirPath(LibPath, Args, /*Shared=*/true);
+   // Remove platform name.
+   llvm::sys::path::remove_filename(LibPath);
++  llvm::sys::path::append(LibPath, "clang");
++  } // nixCC
+   StringRef platformName = "darwin";
+   if (!T.isOSDarwin())
+     platformName = T.isAndroid() ? "linux" : getPlatformNameForTriple(T);
+-  llvm::sys::path::append(LibPath, "clang", "lib", platformName);
++  llvm::sys::path::append(LibPath, "lib", platformName);
+ }
+ 
+ /// Get the runtime library link path, which is platform-specific and found
+@@ -1565,7 +1575,17 @@ const char *ToolChain::getClangLinkerDriver(
+ 
+     // If there is a linker driver in the toolchain folder, use that instead.
+     if (auto tool = llvm::sys::findProgramByName(LinkerDriver, {toolchainPath}))
+-      LinkerDriver = Args.MakeArgString(tool.get());
++	  return Args.MakeArgString(tool.get());
++  }
++
++  // For Nix, prefer linking using the wrapped system clang, instead of using
++  // the unwrapped clang packaged with swift. The latter is unable to link, but
++  // we still want to use it for other purposes (clang importer).
++  if (auto nixCC = llvm::sys::Process::GetEnv("NIX_CC")) {
++	llvm::SmallString<128> binDir(nixCC.getValue());
++	llvm::sys::path::append(binDir, "bin");
++	if (auto tool = llvm::sys::findProgramByName(LinkerDriver, {binDir.str()}))
++	  return Args.MakeArgString(tool.get());
+   }
+ 
+   return LinkerDriver;

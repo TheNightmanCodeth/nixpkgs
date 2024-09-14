@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i bash -E "with import <nixpkgs> {}; runCommandWith { name = \"shell\"; inherit (swiftPackages) stdenv; derivationArgs = { buildInputs = [ gawk gnused nix-prefetch-github jq swift swiftpm swiftpm2nix ]; }; } \"\""
+#!nix-shell -i bash -E "with import <nixpkgs> {}; runCommandWith { name = \"shell\"; inherit stdenv; derivationArgs = { buildInputs = [ gawk gnused nix-prefetch-github jq  ]; }; } \"\""
 
 set -euo pipefail
 
@@ -68,21 +68,21 @@ clean_up() {
 }
 trap clean_up EXIT
 
-for generated in */generated; do
-    package="$(dirname "$generated")"
-    src="$(nix build --no-link --print-out-paths -f ../../../.. "swiftPackages.$package.src")"
-
-    cp -R "$src" "$work/$package"
-    chmod -R u+w "$work"
-    pushd "$work/$package" > /dev/null
-
-    echo >&2 "Running swiftpm on $package"
-    swift package resolve
-
-    echo >&2 "Running swiftpm2nix on $package"
-    swiftpm2nix
-
-    popd > /dev/null
-    rm -fr "$generated"
-    cp -R "$work/$package/nix" "$generated"
-done
+#for generated in */generated; do
+#    package="$(dirname "$generated")"
+#    src="$(nix build --no-link --print-out-paths -f ../../../.. "swiftPackages.$package.src")"
+#
+#    cp -R "$src" "$work/$package"
+#    chmod -R u+w "$work"
+#    pushd "$work/$package" > /dev/null
+#
+#    echo >&2 "Running swiftpm on $package"
+#    swift package resolve
+#
+#    echo >&2 "Running swiftpm2nix on $package"
+#    swiftpm2nix
+#
+#    popd > /dev/null
+#    rm -fr "$generated"
+#    cp -R "$work/$package/nix" "$generated"
+#done
