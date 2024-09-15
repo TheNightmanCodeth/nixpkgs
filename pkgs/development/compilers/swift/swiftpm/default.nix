@@ -267,13 +267,14 @@ let
 
   llbuild = mkBootstrapDerivation {
     name = "llbuild";
-    src = generated.sources.swift-llbuild;
+    src = generated.sources.llbuild;
 
     nativeBuildInputs = lib.optional stdenv.hostPlatform.isDarwin xcbuild;
     buildInputs = [ ncursesInput sqlite ];
 
     patches = [
       ./patches/llbuild-cmake-disable-rpath.patch
+      ./patches/llbuild-guard-posix-spawn.patch
     ];
 
     postPatch = ''
@@ -404,6 +405,8 @@ in stdenv.mkDerivation (commonAttrs // {
     ];
 
   configurePhase = generated.configure + ''
+    export HOME="$TMP"
+
     # Functionality provided by Xcode XCTest, but not available in
     # swift-corelibs-xctest.
     swiftpmMakeMutable swift-tools-support-core
@@ -423,7 +426,7 @@ in stdenv.mkDerivation (commonAttrs // {
     # Required to link with swift-corelibs-xctest on Darwin.
     export SWIFTTSC_MACOS_DEPLOYMENT_TARGET=10.12
 
-    TERM=dumb swift-build -c release
+    TERM=dumb swift-build -c release --verbose
   '';
 
   # TODO: Tests depend on indexstore-db being provided by an existing Swift

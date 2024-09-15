@@ -1,0 +1,145 @@
+From 9871b0223065acc4259063d107391f47219d46e6 Mon Sep 17 00:00:00 2001
+From: Owen Voorhees <ovoorhees@apple.com>
+Date: Mon, 24 Apr 2023 18:40:01 -0700
+Subject: [PATCH 1/3] Revert "Revert "Use new posix_spawn file actions API to
+ set working dir in macOS 10.15""
+
+This reverts commit b90d3457888225ba65b47b635dc3a1b37cd385d3.
+---
+ lib/Basic/Subprocess.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/lib/Basic/Subprocess.cpp b/lib/Basic/Subprocess.cpp
+index 0b116bc9a..ef139dadb 100644
+--- a/lib/Basic/Subprocess.cpp
++++ b/lib/Basic/Subprocess.cpp
+@@ -77,6 +77,7 @@ int pthread_fchdir_np(int fd)
+ 
+ #ifndef HAVE_POSIX_SPAWN_CHDIR
+ #if defined(__sun) || \
++  (defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101500) || \
+   __GLIBC_PREREQ(2, 29)
+ #define HAVE_POSIX_SPAWN_CHDIR 1
+ #else
+@@ -90,6 +91,12 @@ static int posix_spawn_file_actions_addchdir(posix_spawn_file_actions_t * __rest
+ #if HAVE_POSIX_SPAWN_CHDIR
+   return ::posix_spawn_file_actions_addchdir_np(file_actions, path);
+ #else
++#ifdef __APPLE__
++  if (__builtin_available(macOS 10.15, *)) {
++    return ::posix_spawn_file_actions_addchdir_np(file_actions, path);
++  }
++#endif
++
+   // Any other POSIX platform returns ENOSYS (Function not implemented),
+   // to simplify the fallback logic around the call site.
+   return ENOSYS;
+
+From 9baa77e3bd99befd1a8f6cfed3586c1c2c66950a Mon Sep 17 00:00:00 2001
+From: Owen Voorhees <ovoorhees@apple.com>
+Date: Mon, 24 Apr 2023 18:40:12 -0700
+Subject: [PATCH 2/3] Revert "Revert "Guard new posix_spawn_* APIs with the
+ macOS 10.15 SDK macro""
+
+This reverts commit 95fb7ea48b44b0487b8bd781459cb2c6b2d43098.
+---
+ lib/Basic/Subprocess.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/Basic/Subprocess.cpp b/lib/Basic/Subprocess.cpp
+index ef139dadb..64635134c 100644
+--- a/lib/Basic/Subprocess.cpp
++++ b/lib/Basic/Subprocess.cpp
+@@ -91,7 +91,7 @@ static int posix_spawn_file_actions_addchdir(posix_spawn_file_actions_t * __rest
+ #if HAVE_POSIX_SPAWN_CHDIR
+   return ::posix_spawn_file_actions_addchdir_np(file_actions, path);
+ #else
+-#ifdef __APPLE__
++#if defined(__APPLE__) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 101500
+   if (__builtin_available(macOS 10.15, *)) {
+     return ::posix_spawn_file_actions_addchdir_np(file_actions, path);
+   }
+
+From f98d7a4eeece492a8f6122de1e820fbd26dbb469 Mon Sep 17 00:00:00 2001
+From: Owen Voorhees <ovoorhees@apple.com>
+Date: Tue, 25 Apr 2023 11:22:51 -0700
+Subject: [PATCH 3/3] Fix discovered-makefile-deps-relative test bug
+
+---
+ lib/BuildSystem/ShellCommand.cpp              | 10 +++++++++-
+ products/libllbuild/BuildSystem-C-API.cpp     | 20 +++++++++++++++++--
+ .../discovered-makefile-deps-relative.llbuild |  2 +-
+ 3 files changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/lib/BuildSystem/ShellCommand.cpp b/lib/BuildSystem/ShellCommand.cpp
+index e7751112a..4cfd24b95 100644
+--- a/lib/BuildSystem/ShellCommand.cpp
++++ b/lib/BuildSystem/ShellCommand.cpp
+@@ -84,7 +84,15 @@ bool ShellCommand::processDiscoveredDependencies(BuildSystem& system,
+ 
+   for (const auto& depsPath: depsPaths) {
+     // Read the dependencies file.
+-    auto input = system.getFileSystem().getFileContents(depsPath);
++    std::unique_ptr<llvm::MemoryBuffer> input;
++    if (llvm::sys::path::is_absolute(depsPath)) {
++      input = system.getFileSystem().getFileContents(depsPath);
++    } else {
++      SmallString<PATH_MAX> absPath = StringRef(workingDirectory);
++      llvm::sys::path::append(absPath, depsPath);
++      llvm::sys::fs::make_absolute(absPath);
++      input = system.getFileSystem().getFileContents(StringRef(absPath));
++    }
+     if (!input) {
+       system.getDelegate().commandHadError(
+           this, "unable to open dependencies file (" + depsPath + ")");
+diff --git a/products/libllbuild/BuildSystem-C-API.cpp b/products/libllbuild/BuildSystem-C-API.cpp
+index a0ea9a0cf..29ed00c54 100644
+--- a/products/libllbuild/BuildSystem-C-API.cpp
++++ b/products/libllbuild/BuildSystem-C-API.cpp
+@@ -727,7 +727,15 @@ class CAPIExternalCommand : public ExternalCommand {
+                                                    QueueJobContext* context,
+                                                    std::string depsPath) {
+     // Read the dependencies file.
+-    auto input = system.getFileSystem().getFileContents(depsPath);
++    std::unique_ptr<llvm::MemoryBuffer> input;
++    if (llvm::sys::path::is_absolute(depsPath)) {
++      input = system.getFileSystem().getFileContents(depsPath);
++    } else {
++      SmallString<PATH_MAX> absPath = StringRef(workingDirectory);
++      llvm::sys::path::append(absPath, depsPath);
++      llvm::sys::fs::make_absolute(absPath);
++      input = system.getFileSystem().getFileContents(StringRef(absPath));
++    }
+     if (!input) {
+       system.getDelegate().commandHadError(this, "unable to open dependencies file (" + depsPath + ")");
+       return false;
+@@ -778,7 +786,15 @@ class CAPIExternalCommand : public ExternalCommand {
+                                              QueueJobContext* context,
+                                              std::string depsPath) {
+     // Read the dependencies file.
+-    auto input = system.getFileSystem().getFileContents(depsPath);
++    std::unique_ptr<llvm::MemoryBuffer> input;
++    if (llvm::sys::path::is_absolute(depsPath)) {
++      input = system.getFileSystem().getFileContents(depsPath);
++    } else {
++      SmallString<PATH_MAX> absPath = StringRef(workingDirectory);
++      llvm::sys::path::append(absPath, depsPath);
++      llvm::sys::fs::make_absolute(absPath);
++      input = system.getFileSystem().getFileContents(StringRef(absPath));
++    }
+     if (!input) {
+       system.getDelegate().commandHadError(this, "unable to open dependencies file (" + depsPath + ")");
+       return false;
+diff --git a/tests/BuildSystem/Build/discovered-makefile-deps-relative.llbuild b/tests/BuildSystem/Build/discovered-makefile-deps-relative.llbuild
+index 233f29b6e..13643b80f 100644
+--- a/tests/BuildSystem/Build/discovered-makefile-deps-relative.llbuild
++++ b/tests/BuildSystem/Build/discovered-makefile-deps-relative.llbuild
+@@ -21,7 +21,7 @@
+ 
+ # Check a build that modifies the header.
+ #
+-# RUN: echo "mod" >> %t.build/header-1
++# RUN: echo "mod" >> %t.build/wd/header-1
+ # RUN: %{llbuild} buildsystem build --serial --chdir %t.build &> %t2.out
+ # RUN: %{FileCheck} --check-prefix=CHECK-AFTER-MOD --input-file=%t2.out %s
+ #
