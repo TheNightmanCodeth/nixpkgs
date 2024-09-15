@@ -119,7 +119,7 @@
           },
           "name": "sourceControlCheckout"
         },
-        "subpath": "swift-llbuild"
+        "subpath": "llbuild"
       },
       {
         "basedOn": null,
