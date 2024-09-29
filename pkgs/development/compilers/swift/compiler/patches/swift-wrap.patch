@@ -8,8 +8,8 @@ index 5f81c6cd17d..fa712d590af 100644
 
 +  # Nix: wrap the swift build
 +  add_custom_command(
-+	  TARGET swift-frontend-boostrapping0 POST_BUILD
-+	  COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontent-bootstrapping0>
++	  TARGET swift-frontend-bootstrapping0 POST_BUILD
++	  COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend-bootstrapping0>
 +	  VERBATIM
 +  )
 +

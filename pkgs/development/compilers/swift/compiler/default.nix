@@ -11,6 +11,7 @@
 , clang
 , bintools
 , python3Packages
+, breakpointHook
 , git
 , fetchpatch
 , fetchpatch2
@@ -196,6 +197,7 @@ in stdenv.mkDerivation {
   outputs = [ "out" "lib" "dev" "doc" "man" ];
 
   nativeBuildInputs = [
+    breakpointHook # Pause on failure to allow for entering sandbox via cntr
     cmake
     git
     ninja
@@ -293,6 +295,9 @@ in stdenv.mkDerivation {
     echo "swift-linux-fix-libc-paths"
     patch -p1 -d swift -i ${./patches/swift-linux-fix-libc-paths.patch}
 
+    echo "unwrap-built-swift-and-llvm.patch"
+    patch -p1 -d swift -i ${./patches/unwrap-built-swift-and-llvm.patch}
+
     # This patch needs to know the lib output location, so must be substituted
     # in the same derivation as the compiler.
     storeDir="${builtins.storeDir}" \
@@ -306,8 +311,8 @@ in stdenv.mkDerivation {
 
     ${lib.optionalString stdenv.isLinux ''
     substituteInPlace llvm-project/clang/lib/Driver/ToolChains/Linux.cpp \
-      --replace 'SysRoot + "/lib' '"${glibc}/lib" "' \
-      --replace 'SysRoot + "/usr/lib' '"${glibc}/lib" "' \
+      --replace 'SysRoot, "/lib' '"", "${glibc}/lib' \
+      --replace 'SysRoot, "/usr/lib' '"", "${glibc}/lib' \
       --replace 'LibDir = "lib";' 'LibDir = "${glibc}/lib";' \
       --replace 'LibDir = "lib64";' 'LibDir = "${glibc}/lib";' \
       --replace 'LibDir = X32 ? "libx32" : "lib64";' 'LibDir = "${glibc}/lib";'
@@ -380,124 +385,120 @@ in stdenv.mkDerivation {
   #   git diff swift-5.6.3-RELEASE..swift-5.7-RELEASE -- utils/build*
   #
   buildPhase = ''
-    # Helper to build a subdirectory.
-    #
-    # Always reset cmakeFlags before calling this. The cmakeConfigurePhase
-    # amends flags and would otherwise keep expanding it.
-    function buildProject() {
-      mkdir -p $SWIFT_BUILD_ROOT/$1
-      cd $SWIFT_BUILD_ROOT/$1
+    # Create bootstrap dirs
+    mkdir -p $SWIFT_BUILD_ROOT/stage{0,1,2}
+    echo "=== BUILD STAGE 0 ==="
+    # Build stage 0
+    $SWIFT_SOURCE_ROOT/swift/utils/build-script \
+        --release-debuginfo \
+        --install-destdir="$SWIFT_BUILD_ROOT/stage0" \
+        --build-swift-libexec=false \
+        --llvm-install-components='llvm-ar;llvm-cov;llvm-profdata;IndexStore;clang;clang-resource-headers;compiler-rt;clangd;lld;LTO;clang-features-file' \
+        --llvm-targets-to-build=host \
+        --skip-build-benchmarks \
+        --skip-early-swift-driver \
+        --skip-test-early-swift-driver \
+        --skip-early-swiftsyntax \
+        --skip-test-swiftsyntax \
+        --extra-cmake-options="-DSWIFT_USE_LINKER=lld" \
+        --extra-cmake-options="-DBUILD_TESTING=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TESTS=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TEST_BINARIES=NO" \
+        --extra-cmake-options="-DCOMPILER_RT_BUILD_ORC=NO" \
+        --skip-test-cmark \
+        --skip-test-linux \
+        --skip-test-swift \
+        --install-all
 
-      cmakeDir=$SWIFT_SOURCE_ROOT/''${2-$1}
-      cmakeConfigurePhase
+    echo "=== INSTALL STAGE 0 ==="
+    # Install stage 0
+    ## Move unwrapped clang over
+    CMAKE_INSTALL_PREFIX=$SWIFT_BUILD_ROOT/stage0
+    LLVM_INSTALL_COMPONENTS='llvm-ar;llvm-cov;llvm-profdata;IndexStore;clang;clang-resource-headers;compiler-rt;clangd;lld;LTO;clang-features-file'
+    mv $SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/llvm-linux-aarch64/bin/clang-17{-unwrapped,}
+    cd $SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/llvm-linux-aarch64
+    ninjaInstallPhase
+    unset CMAKE_INSTALL_PREFIX
+    unset LLVM_INSTALL_COMPONENTS
 
-      ninjaBuildPhase
-    }
+    cd $SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/cmark-linux-aarch64
+    ninjaInstallPhase
 
-    cmakeFlags="-GNinja"
-    buildProject cmark
+    echo "=== BUILD STAGE 1 ==="
+    # Build stage 1
+    export OLDPATH="$PATH"
+    export PATH="$SWIFT_BUILD_ROOT/stage0/usr/bin:$OLDPATH"
+    $SWIFT_SOURCE_ROOT/swift/utils/build-script \
+        --release \
+        --install-destdir="$SWIFT_BUILD_ROOT/stage1" \
+        --extra-cmake-options="-DSWIFT_USE_LINKER=lld" \
+        --extra-cmake-options="-DBUILD_TESTING=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TESTS=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TEST_BINARIES=NO" \
+        --extra-cmake-options="-DCOMPILER_RT_BUILD_ORC=NO" \
+        --build-swift-libexec=false \
+        --cmark --skip-test-cmark \
+        --foundation --skip-test-foundation \
+        --libdispatch --skip-test-libdispatch \
+        --llbuild --skip-test-llbuild \
+        --skip-build-benchmarks \
+        --skip-build-llvm \
+        --skip-test-linux \
+        --skip-test-swift \
+        --swift-driver --skip-test-swift-driver \
+        --swiftpm --skip-test-swiftpm \
+        --xctest --skip-test-xctest \
+        --install-all
 
-    # Some notes:
-    # - The Swift build just needs Clang.
-    # - We can further reduce targets to just our targetPlatform.
-    cmakeFlags="
-      -GNinja
-      -DLLVM_ENABLE_PROJECTS=clang
-      -DLLVM_TARGETS_TO_BUILD=${{
-        "x86_64" = "X86";
-        "aarch64" = "AArch64";
-      }.${targetPlatform.parsed.cpu.name}}
-    "
-    buildProject llvm llvm-project/llvm
+    echo "=== BUILD STAGE 2 ==="
+    # Build stage 2
+    export PATH="$SWIFT_BUILD_ROOT/stage1/usr/bin:$OLDPATH"
+    $SWIFT_SOURCE_ROOT/swift/utils/build-script \
+        --verbose-build \
+        --release \
+        --install-destdir="$SWIFT_BUILD_ROOT/stage2" \
+        --extra-cmake-options="-DSWIFT_USE_LINKER=lld" \
+        --extra-cmake-options="-DBUILD_TESTING=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TESTS=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TEST_BINARIES=NO" \
+        --extra-cmake-options="-DCOMPILER_RT_BUILD_ORC=NO" \
+        --build-swift-libexec=false \
+        --foundation --skip-test-foundation \
+        --indexstore-db --skip-test-indexstore-db \
+        --libdispatch --skip-test-libdispatch \
+        --llbuild --skip-test-llbuild \
+        --lldb --skip-test-lldb \
+        --skip-build-benchmarks \
+        --skip-build-llvm \
+        --skip-test-linux \
+        --skip-test-swift \
+        --sourcekit-lsp --skip-test-sourcekit-lsp \
+        --swift-driver --skip-test-swift-driver \
+        --swift-install-components='autolink-driver;compiler;clang-resource-dir-symlink;stdlib;swift-remote-mirror;sdk-overlay;static-mirror-lib;toolchain-tools;license;sourcekit-inproc' \
+        --swiftdocc --skip-test-swiftdocc \
+        --swiftpm --skip-test-swiftpm \
+        --xctest --skip-test-xctest \
+        --install-all
+    echo "=== BUILD FINAL ==="
+    # Final
+    mkdir $SWIFT_BUILD_ROOT/final
+    export PATH="$SWIFT_BUILD_ROOT/stage2/usr/bin:$OLDPATH"
+    $SWIFT_SOURCE_ROOT/swift/utils/build-script \
+        --release \
+        --install-destdir="$SWIFT_BUILD_ROOT/final" \
+        --extra-cmake-options="-DSWIFT_USE_LINKER=lld" \
+        --extra-cmake-options="-DBUILD_TESTING=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TESTS=NO" \
+        --extra-cmake-options="-DSWIFT_INCLUDE_TEST_BINARIES=NO" \
+        --extra-cmake-options="-DCOMPILER_RT_BUILD_ORC=NO" \
 
-    '' + lib.optionalString stdenv.isDarwin ''
-    # Add appleSwiftCore to the search paths. We can't simply add it to
-    # buildInputs, because it is potentially an older stdlib than the one we're
-    # building. We have to remove it again after the main Swift build, or later
-    # build steps may fail.
-    OLD_NIX_SWIFTFLAGS_COMPILE="$NIX_SWIFTFLAGS_COMPILE"
-    OLD_NIX_LDFLAGS="$NIX_LDFLAGS"
-    export NIX_SWIFTFLAGS_COMPILE+=" -I ${appleSwiftCore}/lib/swift"
-    export NIX_LDFLAGS+=" -L ${appleSwiftCore}/lib/swift"
-    '' + ''
-
-    # Some notes:
-    # - BOOTSTRAPPING_MODE defaults to OFF in CMake, but is enabled in standard
-    #   builds, so we enable it as well. On Darwin, we have to use the system
-    #   Swift libs because of ABI-stability, but this may be trouble if the
-    #   builder is an older macOS.
-    # - Experimental features are OFF by default in CMake, but are enabled in
-    #   official builds, so we do the same. (Concurrency is also required in
-    #   the stdlib. StringProcessing is often implicitely imported, causing
-    #   lots of warnings if missing.)
-    # - SWIFT_STDLIB_ENABLE_OBJC_INTEROP is set explicitely because its check
-    #   is buggy. (Uses SWIFT_HOST_VARIANT_SDK before initialized.)
-    #   Fixed in: https://github.com/apple/swift/commit/84083afef1de5931904d5c815d53856cdb3fb232
-    cmakeFlags="
-      -GNinja
-      -DBOOTSTRAPPING_MODE=BOOTSTRAPPING${lib.optionalString stdenv.isDarwin "-WITH-HOSTLIBS"}
-      -DSWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=ON
-      -DSWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY=ON
-      -DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP=ON
-      -DSWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED=ON
-      -DSWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING=ON
-      -DSWIFT_ENABLE_EXPERIMENTAL_OBSERVATION=ON
-      -DSWIFT_ENABLE_BACKTRACING=ON
-      -DSWIFT_BUILD_LIBEXEC=${if stdenv.isDarwin then "ON" else "OFF"}
-      -DLLVM_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/llvm
-      -DClang_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/clang
-      -DSWIFT_PATH_TO_CMARK_SOURCE=$SWIFT_SOURCE_ROOT/cmark
-      -DSWIFT_PATH_TO_CMARK_BUILD=$SWIFT_BUILD_ROOT/cmark
-      -DSWIFT_PATH_TO_LIBDISPATCH_SOURCE=$SWIFT_SOURCE_ROOT/swift-corelibs-libdispatch
-      -DSWIFT_PATH_TO_SWIFT_SYNTAX_SOURCE=$SWIFT_SOURCE_ROOT/swift-syntax
-      -DSWIFT_PATH_TO_STRING_PROCESSING_SOURCE=$SWIFT_SOURCE_ROOT/swift-experimental-string-processing
-      -DSWIFT_INSTALL_COMPONENTS=${lib.concatStringsSep ";" swiftInstallComponents}
-      -DSWIFT_STDLIB_ENABLE_OBJC_INTEROP=${if stdenv.isDarwin then "ON" else "OFF"}
-    "
-    buildProject swift
-
-    '' + lib.optionalString stdenv.isDarwin ''
-    # Restore search paths to remove appleSwiftCore.
-    export NIX_SWIFTFLAGS_COMPILE="$OLD_NIX_SWIFTFLAGS_COMPILE"
-    export NIX_LDFLAGS="$OLD_NIX_LDFLAGS"
-    '' + ''
-
-    # These are based on flags in `utils/build-script-impl`.
-    #
-    # LLDB_USE_SYSTEM_DEBUGSERVER=ON disables the debugserver build on Darwin,
-    # which requires a special signature.
-    #
-    # CMAKE_BUILD_WITH_INSTALL_NAME_DIR ensures we don't use rpath on Darwin.
-    #
-    # NOTE: On Darwin, we only want ncurses in the linker search path, because
-    # headers are part of libsystem. Adding its headers to the search path
-    # causes strange mixing and errors. Note that libedit propagates ncurses,
-    # so we add both manually here, instead of relying on setup hooks.
-    # TODO: Find a better way to prevent this conflict.
-    cmakeFlags="
-      -GNinja
-      -DLLDB_SWIFTC=$SWIFT_BUILD_ROOT/swift/bin/swiftc
-      -DLLDB_SWIFT_LIBS=$SWIFT_BUILD_ROOT/swift/lib/swift
-      -DLLVM_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/llvm
-      -DClang_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/clang
-      -DSwift_DIR=$SWIFT_BUILD_ROOT/swift/lib/cmake/swift
-      -DLLDB_ENABLE_CURSES=ON
-      -DLLDB_ENABLE_LIBEDIT=ON
-      -DLLDB_ENABLE_PYTHON=ON
-      -DLLDB_ENABLE_LZMA=OFF
-      -DLLDB_ENABLE_LUA=OFF
-      -DLLDB_INCLUDE_TESTS=OFF
-      -DCMAKE_BUILD_WITH_INSTALL_NAME_DIR=ON
-      ${lib.optionalString stdenv.isDarwin ''
-      -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
-      ''}
-      -DLibEdit_INCLUDE_DIRS=${libedit.dev}/include
-      -DLibEdit_LIBRARIES=${libedit}/lib/libedit${stdenv.hostPlatform.extensions.sharedLibrary}
-      -DCURSES_INCLUDE_DIRS=${if stdenv.isDarwin then "/var/empty" else ncurses.dev}/include
-      -DCURSES_LIBRARIES=${ncurses}/lib/libncurses${stdenv.hostPlatform.extensions.sharedLibrary}
-      -DPANEL_LIBRARIES=${ncurses}/lib/libpanel${stdenv.hostPlatform.extensions.sharedLibrary}
-    ";
-    buildProject lldb llvm-project/lldb
+    echo "=== INSTALL FINAL ==="
+    # Install final
+    ## Move swift-frontend-unwrapped
+    CMAKE_INSTALL_PREFIX="$SWIFT_BUILD_ROOT/final"
+    mv $SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/swift-linux-aarch64/bin/swift-frontend{-unwrapped,}
+    cd $SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/swift-linux-aarch64
+    ninjaInstallPhase
   '';
 
   # TODO: ~50 failing tests on x86_64-linux. Other platforms not checked.
@@ -514,26 +515,16 @@ in stdenv.mkDerivation {
   installPhase = ''
     # Undo the clang and swift wrapping we did for the build.
     # (This happened via patches to cmake files.)
-    cd $SWIFT_BUILD_ROOT
-    mv llvm/bin/clang-16{-unwrapped,}
-    mv swift/bin/swift-frontend{-unwrapped,}
+    # cd $SWIFT_BUILD_ROOT
+    # mv llvm/bin/clang-16{-unwrapped,}
+    # mv swift/bin/swift-frontend{-unwrapped,}
 
     mkdir $out $lib
 
     # Install clang binaries only. We hide these with the wrapper, so they are
     # for private use by Swift only.
-    cd $SWIFT_BUILD_ROOT/llvm
-    installTargets=install-clang
-    ninjaInstallPhase
-    unset installTargets
-
-    # LLDB is also a private install.
-    cd $SWIFT_BUILD_ROOT/lldb
-    ninjaInstallPhase
-
-    cd $SWIFT_BUILD_ROOT/swift
-    ninjaInstallPhase
-
+    cd $SWIFT_BUILD_ROOT/final
+    moveToOutput "./*" "$out"
     # Separate $lib output here, because specific logic follows.
     # Only move the dynamic run-time parts, to keep $lib small. Every Swift
     # build will depend on it.
