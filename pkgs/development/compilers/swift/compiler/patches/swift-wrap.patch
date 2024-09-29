@@ -1,44 +1,43 @@
-Wrap the swift compiler produced during the build
-
+diff --git a/tools/driver/CMakeLists.txt b/tools/driver/CMakeLists.txt
+index 5f81c6cd17d..fa712d590af 100644
 --- a/tools/driver/CMakeLists.txt
 +++ b/tools/driver/CMakeLists.txt
-@@ -16,6 +16,13 @@ if(${LIBSWIFT_BUILD_MODE} MATCHES "BOOTSTRAPPING.*")
-                           swiftDriverTool
-                           libswiftStub)
- 
-+  # Nix: wrap the swift build.
+@@ -34,6 +34,13 @@ if(BOOTSTRAPPING_MODE MATCHES "BOOTSTRAPPING.*")
+
+   add_swift_parser_link_libraries(swift-frontend-bootstrapping0)
+
++  # Nix: wrap the swift build
 +  add_custom_command(
-+    TARGET swift-frontend-bootstrapping0 POST_BUILD
-+    COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend-bootstrapping0>
-+    VERBATIM
++	  TARGET swift-frontend-bootstrapping0 POST_BUILD
++	  COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend-bootstrapping0>
++	  VERBATIM
 +  )
 +
    swift_create_post_build_symlink(swift-frontend-bootstrapping0
      SOURCE "swift-frontend${CMAKE_EXECUTABLE_SUFFIX}"
      DESTINATION "swiftc${CMAKE_EXECUTABLE_SUFFIX}"
-@@ -34,6 +41,13 @@ if(${LIBSWIFT_BUILD_MODE} MATCHES "BOOTSTRAPPING.*")
-                           swiftDriverTool
-                           libswift-bootstrapping1)
- 
-+  # Nix: wrap the swift build.
+@@ -55,6 +62,12 @@ if(BOOTSTRAPPING_MODE MATCHES "BOOTSTRAPPING.*")
+
+   add_swift_parser_link_libraries(swift-frontend-bootstrapping1)
+
 +  add_custom_command(
-+    TARGET swift-frontend-bootstrapping1 POST_BUILD
-+    COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend-bootstrapping1>
-+    VERBATIM
++	  TARGET swift-frontend-bootstrapping1 POST_BUILD
++	  COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend-bootstrapping1>
++	  VERBATIM
 +  )
 +
    swift_create_post_build_symlink(swift-frontend-bootstrapping1
      SOURCE "swift-frontend${CMAKE_EXECUTABLE_SUFFIX}"
      DESTINATION "swiftc${CMAKE_EXECUTABLE_SUFFIX}"
-@@ -50,6 +64,13 @@ target_link_libraries(swift-frontend
-                         swiftDriverTool
-                         libswift)
- 
+@@ -73,6 +86,13 @@ target_link_libraries(swift-frontend
+
+ add_swift_parser_link_libraries(swift-frontend)
+
 +# Nix: wrap the swift build.
 +add_custom_command(
-+  TARGET swift-frontend POST_BUILD
-+  COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend>
-+  VERBATIM
++	TARGET swift-frontend POST_BUILD
++	COMMAND nix-swift-make-swift-wrapper $<TARGET_FILE:swift-frontend>
++	VERBATIM
 +)
 +
  # Create a `swift-driver` executable adjacent to the `swift-frontend` executable

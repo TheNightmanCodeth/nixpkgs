@@ -34,7 +34,7 @@ let
   # Common attributes for the bootstrap swiftpm and the final swiftpm.
   commonAttrs = {
     inherit (sources) version;
-    src = sources.swift-package-manager;
+    src = sources.swiftpm;
     nativeBuildInputs = [ makeWrapper ];
     # Required at run-time for the host platform to build package manifests.
     propagatedBuildInputs = [ Foundation ];

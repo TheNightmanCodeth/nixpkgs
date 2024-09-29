@@ -3,12 +3,12 @@
 , newScope
 , darwin
 , llvmPackages
-, llvmPackages_15
+, llvmPackages_16
 , overrideCC
 }:
 
 let
-  swiftLlvmPackages = llvmPackages_15;
+  swiftLlvmPackages = llvmPackages_16;
 
   self = rec {
 

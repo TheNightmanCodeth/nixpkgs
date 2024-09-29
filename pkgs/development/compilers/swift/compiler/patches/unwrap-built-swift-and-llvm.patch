@@ -1,0 +1,28 @@
+diff --git a/utils/swift_build_support/swift_build_support/build_script_invocation.py b/utils/swift_build_support/swift_build_support/build_script_invocation.py
+index 1e282f8ed38..768664457ef 100644
+--- a/utils/swift_build_support/swift_build_support/build_script_invocation.py
++++ b/utils/swift_build_support/swift_build_support/build_script_invocation.py
+@@ -821,6 +821,23 @@ class BuildScriptInvocation(object):
+         # Install...
+         for host_target in all_hosts:
+             for product_class in pipeline:
++                # Need to move wrapped clang ??
++                # mv llvm/bin/clang-16{-unwrapped,}
++                shell.call_without_sleeping(["ls $SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/llvm-linux-aarch64/bin"])
++                if os.path.isfile(f'{SWIFT_BUILD_ROOT}/Ninja-ReleaseAssert/llvm-linux-aarch64/bin/clang-17-unwrapped'):
++                    shell.call_without_sleeping(
++                        ["cp", 
++                        "$SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/llvm-linux-aarch64/bin/clang-17-unwrapped",
++                        "$SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/llvm-linux-aarch64/bin/clang-17"]
++                    )
++
++                if os.path.isfile(f'{SWIFT_BUILD_ROOT}/Ninja-ReleaseAssert/swift-linux-aarch64/bin/swift-frontend-unwrapped'):
++                    shell.call_without_sleeping(
++                            ["mv"
++                             "$SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/swift-linux-aarch64/bin/swift-frontend-unwrapped",
++                             "$SWIFT_BUILD_ROOT/Ninja-ReleaseAssert/swift-linux-aarch64/bin/swift-frontend"]
++                    )
++
+                 self._execute_install_action(host_target, product_class)
+ 
+         # And then we may be asked to perform several post-processing operations

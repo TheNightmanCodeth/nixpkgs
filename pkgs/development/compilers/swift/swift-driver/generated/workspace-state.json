@@ -12,8 +12,8 @@
         },
         "state": {
           "checkoutState": {
-            "revision": "e394bf350e38cb100b6bc4172834770ede1b7232",
-            "version": "1.0.3"
+            "revision": "0fbc8848e389af3bb55c182bc19ca9d5dc2f255b",
+            "version": "1.4.0"
           },
           "name": "sourceControlCheckout"
         },
@@ -29,8 +29,8 @@
         },
         "state": {
           "checkoutState": {
-            "branch": "release/5.8",
-            "revision": "dccfc2e127a34b89a849407594cf2d604b598ba9"
+            "branch": "main",
+            "revision": "a3b8d34be319f1b3ba8de53c434386419dec1f4f"
           },
           "name": "sourceControlCheckout"
         },
@@ -46,8 +46,8 @@
         },
         "state": {
           "checkoutState": {
-            "revision": "836bc4557b74fe6d2660218d56e3ce96aff76574",
-            "version": "1.1.1"
+            "revision": "025bcb1165deab2e20d4eaba79967ce73013f496",
+            "version": "1.2.1"
           },
           "name": "sourceControlCheckout"
         },
@@ -63,8 +63,8 @@
         },
         "state": {
           "checkoutState": {
-            "branch": "release/5.8",
-            "revision": "ac4871e01ef338cb95b5d28328cab0ec1dfae935"
+            "branch": "main",
+            "revision": "3b13e439a341bbbfe0f710c7d1be37221745ef1a"
           },
           "name": "sourceControlCheckout"
         },
@@ -80,8 +80,8 @@
         },
         "state": {
           "checkoutState": {
-            "revision": "01835dc202670b5bb90d07f3eae41867e9ed29f6",
-            "version": "5.0.1"
+            "revision": "0d9ee7ea8c4ebd4a489ad7a73d5c6cad55d6fed3",
+            "version": "5.0.6"
           },
           "name": "sourceControlCheckout"
         },
